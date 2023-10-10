@@ -1,0 +1,28 @@
+# Edit this unique names to create the Azure resources
+export UNIQUEID=aire
+export APPNAME=multicluster
+export LOCATION=eastus
+
+# Resource names (you can edit if needed)
+export BASE_DIR=$PWD
+export WORK_DIR=$BASE_DIR/workdir
+export PATH=$PATH:$WORK_DIR/bin:
+export RESOURCE_GROUP=rg-$APPNAME-$UNIQUEID
+export MYACR=acr$APPNAME$UNIQUEID
+export VIRTUAL_NETWORK_NAME=vnet-$APPNAME-$UNIQUEID
+export AKS1_SUBNET_CIDR=10.1.1.0/24
+export AKS2_SUBNET_CIDR=10.1.2.0/24
+export AKSCLUSTER1=aks1-$APPNAME-$UNIQUEID
+export AKSCLUSTER2=aks2-$APPNAME-$UNIQUEID
+export NODE_COUNT=3
+export ISTIO_VERSION=1.19.1
+export CTX_CLUSTER1=$AKSCLUSTER1
+export CTX_CLUSTER2=$AKSCLUSTER2
+
+# NON Istio / Cluster config
+# PE Color
+export PE_COLOR='\033[0;32m'
+# ECHO Color
+export ECHO_COLOR="\033[0;34m"
+export ERROR_COLOR="\033[0;31m"
+export NC='\033[0m'
