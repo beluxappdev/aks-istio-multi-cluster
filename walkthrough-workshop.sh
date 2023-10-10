@@ -1,12 +1,28 @@
 #!/usr/bin/env bash
 
+# Script Purpose:
+# This script sets up a multi-cluster Istio service mesh across two AKS clusters.
+# It checks for necessary tools, bootstraps the environment, sets up certificates,
+# installs and configures Istio, and deploys sample applications to validate the setup.
+#
+# Prerequisites:
+# - Ensure 'az', 'kubectl', and 'istioctl' are installed and available in PATH.
+# - Ensure you are logged into Azure CLI and have access to create/manage AKS clusters.
+# - Ensure necessary environment variables are set in 'env' file.
+#
+# Usage:
+# ./walkthrough-workshop.sh
+#
 set -eE
 
-# Load configure env variables
-source ./env
-source ./functions.sh
+# Loading environment variables and functions
+source ./env  # Load environment variables (e.g., RESOURCE_GROUP, AKSCLUSTER1, etc.)
+source ./functions.sh  # Load additional functions (e.g., pe)
 
-# Check tools
+# 'pe' is a custom function used to execute and print commands.
+# It is defined in 'functions.sh' and used throughout this script to execute commands.
+
+# Validate that necessary variables are set
 echo -e "$ECHO_COLOR Checking if necessary tools (az, kubectl, istioctl) are installed..."
 pe "validate_prerequisites"
 
@@ -16,20 +32,18 @@ if [ $(az group exists --name $RESOURCE_GROUP) = false ]; then
 fi
 
 echo -e "$ECHO_COLOR << Clusters created, let's update our kube config >>"
-echo -e "$ECHO_COLOR ============================================================ >>"
-az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKSCLUSTER1
-az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKSCLUSTER2
+echo -e "az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKSCLUSTER1"
+echo -e "az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKSCLUSTER2"
 
-echo -e "$ECHO_COLOR << Set context name in the default Kubernetes configuration file used for accessing cluster1 and cluster2. >>"
-echo -e "$ECHO_COLOR ============================================================ >>"
+echo -e "$ECHO_COLOR Set context name in the default Kubernetes configuration file used for accessing cluster1 and cluster2."
 pe "export CTX_CLUSTER1=$AKSCLUSTER1"
 pe "export CTX_CLUSTER2=$AKSCLUSTER2"
 
+# SECTION: Certificate Generation
+# Generate root and intermediate certificates for secure communication between
+# clusters in the Istio service mesh. Certificates are generated using Makefile
+# targets and stored in the 'certs' directory.
 
-echo -e "$ECHO_COLOR Set context name in the default Kubernetes configuration file used for accessing cluster1 and cluster2. >>"
-echo -e "$ECHO_COLOR For this, first we need to create a self >>"
-echo -e "$ECHO_COLOR ============================================================ >>"
-# A multicluster service mesh deployment requires that you establish trust between all clusters in the mesh.
 pe "mkdir -p certs"
 pe "pushd certs"
 
@@ -40,6 +54,8 @@ pe "make -f ../tools/certs/Makefile.selfsigned.mk root-ca"
 pe "make -f ../tools/certs/Makefile.selfsigned.mk cluster1-cacerts"
 pe "make -f ../tools/certs/Makefile.selfsigned.mk cluster2-cacerts"
 
+# SECTION: Istio Namespace and Secrets Setup
+# Creating the Istio system namespace and setting up secrets in both clusters.
 pe "kubectl create namespace istio-system --dry-run=client --context=\"${CTX_CLUSTER1}\" -o yaml | kubectl apply --context=\"${CTX_CLUSTER1}\" -f -"
 pe "kubectl get secrets -n istio-system --context=\"${CTX_CLUSTER1}\" | grep -q \"^cacerts\" || \
         kubectl create secret generic cacerts -n istio-system --context=\"${CTX_CLUSTER1}\" \
@@ -59,35 +75,31 @@ pe "kubectl get secrets -n istio-system --context=\"${CTX_CLUSTER2}\" | grep -q 
 # Return to the top-level directory of the Istio installation:
 pe "popd"
 
-echo -e "$ECHO_COLOR Install Multi-Primary on different networks"
+# SECTION: Network Configuration
+# Setting and labeling the default network for clusters.
 echo -e "$ECHO_COLOR Set the default network for cluster1"
 pe "kubectl --context=\"${CTX_CLUSTER1}\" get namespace istio-system && \
     kubectl --context=\"${CTX_CLUSTER1}\" label namespace istio-system topology.istio.io/network=network1"
-
-echo -e "$ECHO_COLOR Configure cluster1 as a primary"
-pe "istioctl install -y --context=\"${CTX_CLUSTER1}\" -f $BASE_DIR/kubernetes/istio/cluster1.yaml"
-
-echo -e "$ECHO_COLOR Install the east-west gateway in cluster1"
-pe "$BASE_DIR/kubernetes/istio/gen-eastwest-gateway.sh \
-    --mesh mesh1 --cluster cluster1 --network network1 | \
-    istioctl --context=\"${CTX_CLUSTER1}\" install -y -f -"
-pe "kubectl patch service istio-eastwestgateway -n istio-system --context=\"${CTX_CLUSTER1}\" -p '{\"metadata\":{\"annotations\":{\"service.beta.kubernetes.io/azure-load-balancer-internal\":\"true\"}}}'"
-
-pe "sleep 20"
-
-echo -e "$ECHO_COLOR Check that the east-west gateway assigned an external IP address:"
-pe "kubectl --context="${CTX_CLUSTER1}" get svc istio-eastwestgateway -n istio-system"
-
-echo -e "$ECHO_COLOR Since the clusters are on separate networks, we need to expose all services local on the east-west gateway in both clusters."
-pe "kubectl apply --context=\"${CTX_CLUSTER1}\" -n istio-system -f \
-    $BASE_DIR/kubernetes/istio/expose-services.yaml"
 
 echo -e "$ECHO_COLOR Set the default network for cluster2"
 pe "kubectl --context=\"${CTX_CLUSTER2}\" get namespace istio-system && \
     kubectl --context=\"${CTX_CLUSTER2}\" label namespace istio-system topology.istio.io/network=network2"
 
+# SECTION: Istio Installation and Configuration
+# Installing and configuring Istio on both clusters.
+echo -e "$ECHO_COLOR Configure cluster1 as a primary"
+pe "istioctl install -y --context=\"${CTX_CLUSTER1}\" -f $BASE_DIR/kubernetes/istio/cluster1.yaml"
+
 echo -e "$ECHO_COLOR Configure cluster2 as a primary"
 pe "istioctl install -y --context=\"${CTX_CLUSTER2}\" -f $BASE_DIR/kubernetes/istio/cluster2.yaml"
+
+# SECTION: East-West Gateway Setup
+# Installing and configuring the east-west gateway in both clusters.
+echo -e "$ECHO_COLOR Install the east-west gateway in cluster1"
+pe "$BASE_DIR/kubernetes/istio/gen-eastwest-gateway.sh \
+    --mesh mesh1 --cluster cluster1 --network network1 | \
+    istioctl --context=\"${CTX_CLUSTER1}\" install -y -f -"
+pe "kubectl patch service istio-eastwestgateway -n istio-system --context=\"${CTX_CLUSTER1}\" -p '{\"metadata\":{\"annotations\":{\"service.beta.kubernetes.io/azure-load-balancer-internal\":\"true\"}}}'"
 
 echo -e "$ECHO_COLOR Install the east-west gateway in cluster2"
 pe "$BASE_DIR/kubernetes/istio/gen-eastwest-gateway.sh \
@@ -98,12 +110,23 @@ pe "kubectl patch service istio-eastwestgateway -n istio-system --context=\"${CT
 pe "sleep 20"
 
 echo -e "$ECHO_COLOR Check that the east-west gateway assigned an external IP address:"
+pe "kubectl --context="${CTX_CLUSTER1}" get svc istio-eastwestgateway -n istio-system"
+
+echo -e "$ECHO_COLOR Check that the east-west gateway assigned an external IP address:"
 pe "kubectl --context=\"${CTX_CLUSTER2}\" get svc istio-eastwestgateway -n istio-system"
+
+# SECTION: Service Exposure
+# Exposing services on the east-west gateway in both clusters.
+echo -e "$ECHO_COLOR Since the clusters are on separate networks, we need to expose all services local on the east-west gateway in both clusters."
+pe "kubectl apply --context=\"${CTX_CLUSTER1}\" -n istio-system -f \
+    $BASE_DIR/kubernetes/istio/expose-services.yaml"
 
 echo -e "$ECHO_COLOR Since the clusters are on separate networks, we need to expose all services \(*.local\) on the east-west gateway in both clusters."
 pe "kubectl --context=\"${CTX_CLUSTER2}\" apply -n istio-system -f \
     $BASE_DIR/kubernetes/istio/expose-services.yaml"
 
+# SECTION: Endpoint Discovery Setup
+# Enabling endpoint discovery by installing remote secrets in both clusters.
 echo -e "$ECHO_COLOR Enable Endpoint Discovery"
 echo -e "$ECHO_COLOR Install a remote secret in cluster2 that provides access to cluster1 s API server."
 pe "istioctl create-remote-secret \
@@ -116,6 +139,11 @@ pe "istioctl create-remote-secret \
   --context=\"${CTX_CLUSTER2}\" \
   --name=cluster2 | \
   kubectl apply -f - --context=\"${CTX_CLUSTER1}\" "
+
+
+# SECTION: Sample Application Deployment
+# Deploy sample applications (helloworld and bookinfo) to validate the Istio
+# multi-cluster setup and demonstrate cross-cluster communication.
 
 echo -e "$ECHO_COLOR Verify the installation with the helloworld app"
 
@@ -149,19 +177,25 @@ pe "kubectl apply --context=\"${CTX_CLUSTER1}\" \
 pe "kubectl apply --context=\"${CTX_CLUSTER2}\" \
     -f $BASE_DIR/kubernetes/sample-app/sleep.yaml -n sample"
 
-
 echo -e "$ECHO_COLOR Verify the installation with the bookinfo app"
 
-# BOOKINFO
 pe "kubectl create namespace bookinfo --dry-run=client --context=\"${CTX_CLUSTER1}\" -o yaml | kubectl apply --context=\"${CTX_CLUSTER1}\" -f -"
 pe "kubectl create namespace bookinfo --dry-run=client --context=\"${CTX_CLUSTER2}\" -o yaml | kubectl apply --context=\"${CTX_CLUSTER2}\" -f -"
 
 pe "kubectl label namespace bookinfo istio-injection=enabled --context=\"${CTX_CLUSTER1}\""
 pe "kubectl label namespace bookinfo istio-injection=enabled --context=\"${CTX_CLUSTER2}\""
 
+echo -e "$ECHO_COLOR Assign all components to cluster 1, except for reviews, which is created on cluster 2."
 pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-cluster1.yaml --context=\"${CTX_CLUSTER1}\""
 pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-cluster2.yaml --context=\"${CTX_CLUSTER2}\""
 
 pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-gateway.yaml --context=\"${CTX_CLUSTER1}\""
 
-echo -e "${NC}"
+export GATEWAY_PRODUCT=\$(kubectl --context central get -n istio-system service istio-ingressgateway --context="${CTX_CLUSTER1}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+echo -e "$ECHO_COLOR Check on your browser the bookinfo app and note that the review service is in cluster 2"
+echo -e "$ECHO_COLOR http://${GATEWAY_PRODUCT}/productpage
+
+# SECTION: Cleanup and Finalization.
+echo -e "${ECHO_COLOR}Script execution completed. Review the outputs and logs for any issues.${NC}"
+echo -e "${ECHO_COLOR}You can now proceed to test the multi-cluster setup using the provided sample applications.${NC}"
