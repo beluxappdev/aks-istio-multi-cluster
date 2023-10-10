@@ -117,7 +117,7 @@ pe "istioctl create-remote-secret \
   --name=cluster2 | \
   kubectl apply -f - --context=\"${CTX_CLUSTER1}\" "
 
-echo -e "$ECHO_COLOR Verify the installation"
+echo -e "$ECHO_COLOR Verify the installation with the helloworld app"
 
 echo -e "$ECHO_COLOR Create sample namespace and enable sidecar injection"
 pe "kubectl create namespace sample --dry-run=client --context=\"${CTX_CLUSTER1}\" -o yaml | kubectl apply --context=\"${CTX_CLUSTER1}\" -f -"
@@ -150,6 +150,8 @@ pe "kubectl apply --context=\"${CTX_CLUSTER2}\" \
     -f $BASE_DIR/kubernetes/sample-app/sleep.yaml -n sample"
 
 
+echo -e "$ECHO_COLOR Verify the installation with the bookinfo app"
+
 # BOOKINFO
 pe "kubectl create namespace bookinfo --dry-run=client --context=\"${CTX_CLUSTER1}\" -o yaml | kubectl apply --context=\"${CTX_CLUSTER1}\" -f -"
 pe "kubectl create namespace bookinfo --dry-run=client --context=\"${CTX_CLUSTER2}\" -o yaml | kubectl apply --context=\"${CTX_CLUSTER2}\" -f -"
@@ -161,6 +163,5 @@ pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-cluste
 pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-cluster2.yaml --context=\"${CTX_CLUSTER2}\""
 
 pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-gateway.yaml --context=\"${CTX_CLUSTER1}\""
-
 
 echo -e "${NC}"
