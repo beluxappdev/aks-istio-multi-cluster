@@ -1,0 +1,38 @@
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: helloworld-per-cluster-dr
+spec:
+  host: helloworld.sample.svc.cluster.local
+  subsets:
+  - name: cluster1
+    labels:
+      topology.istio.io/cluster: cluster1
+  - name: cluster2
+    labels:
+      topology.istio.io/cluster: cluster2
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: helloworld-cluster-local-vs
+spec:
+  hosts:
+  - helloworld.sample.svc.cluster.local
+  http:
+  - name: "cluster-1-local"
+    match:
+    - sourceLabels:
+        topology.istio.io/cluster: "cluster1"
+    route:
+    - destination:
+        host: helloworld.sample.svc.cluster.local
+        subset: cluster1
+  - name: "cluster-2-local"
+    match:
+    - sourceLabels:
+        topology.istio.io/cluster: "cluster2"
+    route:
+    - destination:
+        host: helloworld.sample.svc.cluster.local
+        subset: cluster2

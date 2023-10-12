@@ -29,11 +29,12 @@ pe "validate_prerequisites"
 echo -e "$ECHO_COLOR Bootstrapping the environment (creating resource groups, AKS clusters, etc.)..."
 if [ $(az group exists --name $RESOURCE_GROUP) = false ]; then
     pe "source $BASE_DIR/bootstrap-workshop.sh"
+    pe "sleep 20"
 fi
 
 echo -e "$ECHO_COLOR << Clusters created, let's update our kube config >>"
-echo -e "az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKSCLUSTER1"
-echo -e "az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKSCLUSTER2"
+pe "az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKSCLUSTER1"
+pe "az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKSCLUSTER2"
 
 echo -e "$ECHO_COLOR Set context name in the default Kubernetes configuration file used for accessing cluster1 and cluster2."
 pe "export CTX_CLUSTER1=$AKSCLUSTER1"
@@ -43,16 +44,15 @@ pe "export CTX_CLUSTER2=$AKSCLUSTER2"
 # Generate root and intermediate certificates for secure communication between
 # clusters in the Istio service mesh. Certificates are generated using Makefile
 # targets and stored in the 'certs' directory.
-
 pe "mkdir -p certs"
 pe "pushd certs"
 
 echo -e "$ECHO_COLOR Generating root and intermediate certificates for secure communication between clusters in Istio..."
 #Generate the root certificate and key:
-pe "make -f ../tools/certs/Makefile.selfsigned.mk root-ca"
+pe "make -f ../tools/certificates/Makefile.selfsigned.mk root-ca"
 # For each cluster, generate an intermediate certificate and key for the Istio CA. The following is an example for cluster1:
-pe "make -f ../tools/certs/Makefile.selfsigned.mk cluster1-cacerts"
-pe "make -f ../tools/certs/Makefile.selfsigned.mk cluster2-cacerts"
+pe "make -f ../tools/certificates/Makefile.selfsigned.mk cluster1-cacerts"
+pe "make -f ../tools/certificates/Makefile.selfsigned.mk cluster2-cacerts"
 
 # SECTION: Istio Namespace and Secrets Setup
 # Creating the Istio system namespace and setting up secrets in both clusters.
@@ -96,15 +96,11 @@ pe "istioctl install -y --context=\"${CTX_CLUSTER2}\" -f $BASE_DIR/kubernetes/is
 # SECTION: East-West Gateway Setup
 # Installing and configuring the east-west gateway in both clusters.
 echo -e "$ECHO_COLOR Install the east-west gateway in cluster1"
-pe "$BASE_DIR/kubernetes/istio/gen-eastwest-gateway.sh \
-    --mesh mesh1 --cluster cluster1 --network network1 | \
-    istioctl --context=\"${CTX_CLUSTER1}\" install -y -f -"
+pe "istioctl --context=\"${CTX_CLUSTER1}\" install -y -f  $BASE_DIR/kubernetes/istio/cluster1-ew-gtw-config.yaml"
 pe "kubectl patch service istio-eastwestgateway -n istio-system --context=\"${CTX_CLUSTER1}\" -p '{\"metadata\":{\"annotations\":{\"service.beta.kubernetes.io/azure-load-balancer-internal\":\"true\"}}}'"
 
 echo -e "$ECHO_COLOR Install the east-west gateway in cluster2"
-pe "$BASE_DIR/kubernetes/istio/gen-eastwest-gateway.sh \
-    --mesh mesh1 --cluster cluster2 --network network2 | \
-    istioctl --context=\"${CTX_CLUSTER2}\" install -y -f -"
+pe "istioctl --context=\"${CTX_CLUSTER2}\" install -y -f  $BASE_DIR/kubernetes/istio/cluster2-ew-gtw-config.yaml"
 pe "kubectl patch service istio-eastwestgateway -n istio-system --context=\"${CTX_CLUSTER2}\" -p '{\"metadata\":{\"annotations\":{\"service.beta.kubernetes.io/azure-load-balancer-internal\":\"true\"}}}'"
 
 pe "sleep 20"
@@ -182,7 +178,7 @@ echo -e "$ECHO_COLOR Verify the installation with the bookinfo app"
 pe "kubectl create namespace bookinfo --dry-run=client --context=\"${CTX_CLUSTER1}\" -o yaml | kubectl apply --context=\"${CTX_CLUSTER1}\" -f -"
 pe "kubectl create namespace bookinfo --dry-run=client --context=\"${CTX_CLUSTER2}\" -o yaml | kubectl apply --context=\"${CTX_CLUSTER2}\" -f -"
 
-pe "kubectl label namespace bookinfo istio-injection=enabled --context=\"${CTX_CLUSTER1}\""
+pe "kubectl label namespace bookinfo istio-injection=enabled --context="${CTX_CLUSTER1}""
 pe "kubectl label namespace bookinfo istio-injection=enabled --context=\"${CTX_CLUSTER2}\""
 
 echo -e "$ECHO_COLOR Assign all components to cluster 1, except for reviews, which is created on cluster 2."
@@ -191,10 +187,10 @@ pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-cluste
 
 pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-gateway.yaml --context=\"${CTX_CLUSTER1}\""
 
-export GATEWAY_PRODUCT=\$(kubectl --context central get -n istio-system service istio-ingressgateway --context="${CTX_CLUSTER1}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+export GATEWAY_PRODUCT=$(kubectl --context central get -n istio-system service istio-ingressgateway --context="${CTX_CLUSTER1}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
 echo -e "$ECHO_COLOR Check on your browser the bookinfo app and note that the review service is in cluster 2"
-echo -e "$ECHO_COLOR http://${GATEWAY_PRODUCT}/productpage
+echo -e "$ECHO_COLOR http://${GATEWAY_PRODUCT}/productpage"
 
 # SECTION: Cleanup and Finalization.
 echo -e "${ECHO_COLOR}Script execution completed. Review the outputs and logs for any issues.${NC}"

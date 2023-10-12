@@ -1,5 +1,5 @@
 # Edit this unique names to create the Azure resources
-export UNIQUEID=airg
+export UNIQUEID=airj
 export APPNAME=multicluster
 export LOCATION=eastus
 

@@ -75,7 +75,7 @@ Below are the steps to manually execute the script's operations:
 
 2. **Bootstrapping the Environment**
    
-   **2.1** For this workshop, you will need 2 AKS cluster that can communicate to each other, or that has access to each cluster eastwest gateway. The script bootstrap-workshop is the easiest way to create two vanilla AKS clusters for configuring Istio and the sample apps. To run it, all you need to do is ensure that tou have az tool installed and then login with your account:
+   **2.1** For this lab, you will need 2 AKS cluster that can communicate to each other, or that has access to each cluster eastwest gateway. The script bootstrap-workshop is the easiest way to create two vanilla AKS clusters for configuring Istio and the sample apps. To run it, all you need to do is ensure that tou have az tool installed and then login with your account:
 
    ```bash
    az login --use-device-code
@@ -98,62 +98,362 @@ Below are the steps to manually execute the script's operations:
    ./boostrap-workshop.sh
    ```
 
-3. **Certificate Generation**
-   Navigate to the `certs` directory and use `make` commands to generate certificates.
+3. **Configure Trust Between the Clusters**
+   
+   **3.1** Multicluster service mesh deployments require that you establish trust between all clusters in the mesh. For example, you could use a certificate authority (CA) to sign certificates for all of the clusters in the mesh. This would allow the clusters to verify each other's identities using their certificates. Now let's move to the `certs` directory and use `make` commands to generate certificates.
    ```bash
-   cd certs
-   make -f ../tools/certs/Makefile.selfsigned.mk root-ca
-   make -f ../tools/certs/Makefile.selfsigned.mk [CLUSTER]-cacerts
+      mkdir -p certs
+      pushd certs
+      #Generate the root certificate and key:
+      make -f ../tools/certificates/Makefile.selfsigned.mk root-ca
+      # For each cluster, generate an intermediate certificate and key for the Istio CA. The following is an example for cluster1:
+      make -f ../tools/certificates/Makefile.selfsigned.mk cluster1-cacerts
+      make -f ../tools/certificates/Makefile.selfsigned.mk cluster2-cacerts
+      popd
    ```
+   > Follow these instructions to try this out. But if you are setting up a cluster that you will be using in production, make sure to use a CA that is designed for production use.
    
 4. **Istio Namespace and Secrets Setup**
-   Manually create namespaces and secrets using `kubectl`.
+   
+   **4.1**Before creating secret for the certificates, we need to create the istio-system namespace:
    ```bash
-   kubectl create namespace istio-system
-   kubectl create secret generic cacerts -n istio-system --from-file=[CLUSTER]/ca-cert.pem --from-file=[CLUSTER]/ca-key.pem --from-file=[CLUSTER]/root-cert.pem --from-file=[CLUSTER]/cert-chain.pem
+      # For Cluster 1
+      kubectl create namespace istio-system --context="${CTX_CLUSTER1}"
+      # For Cluster 2
+      kubectl create namespace istio-system --context="${CTX_CLUSTER2}"
+   ```
+
+   **4.2** Now you can create a secret including all the unout files in each cluster:
+   ```bash
+      # For Cluster 1
+      kubectl create secret generic cacerts --context="${CTX_CLUSTER1}" -n istio-system \
+      --from-file=cluster1/ca-cert.pem \
+      --from-file=cluster1/ca-key.pem \
+      --from-file=cluster1/root-cert.pem \
+      --from-file=cluster1/cert-chain.pem
+      # For Cluster 2
+      kubectl create secret generic cacerts --context="${CTX_CLUSTER2}" -n istio-system \
+      --from-file=cluster2/ca-cert.pem \
+      --from-file=cluster2/ca-key.pem \
+      --from-file=cluster2/root-cert.pem \
+      --from-file=cluster2/cert-chain.pem
    ```
    
 5. **Network Configuration**
-   Label the Istio namespace with the network name.
+   Label the default network for clusters to manage the network topology within the Istio mesh. 
    ```bash
-   kubectl label namespace istio-system topology.istio.io/network=[NETWORK_NAME]
+      # Set the default network for cluster1
+      kubectl --context="${CTX_CLUSTER1}" get namespace istio-system && \
+         kubectl --context="${CTX_CLUSTER1}" label namespace istio-system topology.istio.io/network=network1
+
+      # Set the default network for cluster2
+      kubectl --context="${CTX_CLUSTER2}" get namespace istio-system && \
+         kubectl --context="${CTX_CLUSTER2}" label namespace istio-system topology.istio.io/network=network2
    ```
    
 6. **Istio Installation and Configuration**
-   Use `istioctl` to install and configure Istio.
+   
+   **6.1** Let's take a look at the Istion configuration for each cluster
+   
+   ```yaml
+      # Cluster 1
+      apiVersion: install.istio.io/v1alpha1
+      kind: IstioOperator
+      spec:
+      values:
+         global:
+            meshID: mesh1
+            multiCluster:
+            clusterName: cluster1
+            network: network1
+      ---
+      # Cluster 2 
+      apiVersion: install.istio.io/v1alpha1
+      kind: IstioOperator
+      spec:
+      values:
+         global:
+            meshID: mesh1
+            multiCluster:
+            clusterName: cluster2
+            network: network2
+   ```
+   Note that we have the same meshID for both clusters, but different clusterName and network. The network must be the same value used during the labeling of the istio-system namespace in step 5. Feel free to tweak the configuration with any other parameters you might need for your use case. 
+
+   Now we are going to use `istioctl` to install and configure Istio: 
    ```bash
-   istioctl install -y -f [ISTIO_CONFIG_FILE]
+      # Configure cluster1 as a primary
+      istioctl install -y --context="${CTX_CLUSTER1}" -f $BASE_DIR/kubernetes/istio/cluster1.yaml
+      # Configure cluster2 as a primary
+      istioctl install -y --context="${CTX_CLUSTER2}" -f $BASE_DIR/kubernetes/istio/cluster2.yaml
    ```
    
 7. **East-West Gateway Setup**
-   Install and configure the east-west gateway using `istioctl` and `kubectl`.
+   **7.1** In this step we will install and configure the east-west gateway in both clusters, facilitating communication between services in different clusters. This step ensures that services in different clusters can communicate with each other through a dedicated gateway. Let's take a look at one of the configurations we are going to pass to `istioctl`:
+   ```yaml
+      apiVersion: install.istio.io/v1alpha1
+      kind: IstioOperator
+      metadata:
+      name: eastwest
+      spec:
+      revision: ""
+      profile: empty
+      components:
+         ingressGateways:
+            - name: istio-eastwestgateway
+            label:
+               istio: eastwestgateway
+               app: istio-eastwestgateway
+               topology.istio.io/network: network1
+            enabled: true
+            k8s:
+               env:
+                  # traffic through this gateway should be routed inside the network
+                  - name: ISTIO_META_REQUESTED_NETWORK_VIEW
+                  value: network1
+               service:
+                  ports:
+                  - name: status-port
+                     port: 15021
+                     targetPort: 15021
+                  - name: tls
+                     port: 15443
+                     targetPort: 15443
+                  - name: tls-istiod
+                     port: 15012
+                     targetPort: 15012
+                  - name: tls-webhook
+                     port: 15017
+                     targetPort: 15017
+      values:
+         gateways:
+            istio-ingressgateway:
+            injectionTemplate: gateway
+         global:
+            network: network1
+   ```
+   
+   Note that the network needs to match the network you labled the Istio namespace in Step 5. Now, let's install and configure the east-west gateway using `istioctl`:.
    ```bash
-   istioctl install -y -f [GATEWAY_CONFIG_FILE]
-   kubectl patch service istio-eastwestgateway -n istio-system -p '{"metadata":{"annotations":{"service.beta.kubernetes.io/azure-load-balancer-internal":"true"}}}'
+      # Installing and configuring the east-west gateway in both clusters.
+      istioctl --context="${CTX_CLUSTER1}" install -y -f  $BASE_DIR/kubernetes/istio/cluster1-ew-gtw-config.yaml
+      # Install the east-west gateway in cluster2
+      istioctl --context="${CTX_CLUSTER2}" install -y -f  $BASE_DIR/kubernetes/istio/cluster2-ew-gtw-config.yaml
+   ```
+   Optitionally, you can mark those gateways to be exposed as as Internal Load Balancer:
+   ```bash
+      # Patch cluster 1
+      kubectl patch service istio-eastwestgateway -n istio-system --context="${CTX_CLUSTER1}" -p '{"metadata":{"annotations":{"service.beta.kubernetes.io/azure-load-balancer-internal":"true"}}}'
+      # Patch cluster 2
+      kubectl patch service istio-eastwestgateway -n istio-system --context="${CTX_CLUSTER2}" -p '{"metadata\":{"annotations":{"service.beta.kubernetes.io/azure-load-balancer-internal":"true"}}}'
+   ```
+   Now wait for the east-west gateway to get an assigned external or internal IP before proceeding:
+   ```bash
+      # Check cluster 1
+      kubectl --context="${CTX_CLUSTER1}" get svc istio-eastwestgateway -n istio-system
+      # Check cluster 2
+      kubectl --context="${CTX_CLUSTER2}" get svc istio-eastwestgateway -n istio-system
    ```
    
 8. **Service Exposure**
-   Apply service exposure configurations using `kubectl`.
+   **8.1** Now we are going to expose services on the east-west gateway in both clusters, making them accessible to services in the other cluster. This step ensures that services can be discovered and accessed across clusters, enabling a truly multi-cluster service mesh. Let's check the gateway configuration for that:
+
+   ```yaml
+      apiVersion: networking.istio.io/v1alpha3
+      kind: Gateway
+      metadata:
+      name: cross-network-gateway
+      spec:
+      selector:
+         istio: eastwestgateway
+      servers:
+         - port:
+            number: 15443
+            name: tls
+            protocol: TLS
+            tls:
+            mode: AUTO_PASSTHROUGH
+            hosts:
+            - "*.local"
+   ```
+   As you can see, the host configuration is set to any service that is deployed in the cluster. Other options would be to specifu a service ("mysvc.myns.svc.cluster.local"), namespace ("*.myns.svc.cluster.local") or global ("*").  Now let's apply service exposure configurations using `kubectl`:
    ```bash
-   kubectl apply -n istio-system -f [EXPOSE_SERVICES_YAML]
+      # Cluster 1
+      kubectl apply --context="${CTX_CLUSTER1}" -n istio-system -f \
+         $BASE_DIR/kubernetes/istio/expose-services.yaml
+      # Cluster 2
+      kubectl --context="${CTX_CLUSTER2}" apply -n istio-system -f \
+         $BASE_DIR/kubernetes/istio/expose-services.yaml
    ```
    
 9. **Endpoint Discovery Setup**
-   Create remote secrets and apply them using `istioctl` and `kubectl`.
+
+   **9.1** On this step we are going to enable endpoint discovery by installing remote secrets in both clusters, allowing each cluster to discover services in the other. This step is crucial for enabling dynamic discovery of services across clusters. Create remote secrets and apply them using `istioctl` and `kubectl`.
    ```bash
-   istioctl create-remote-secret --context="[CTX_CLUSTER]" --name=[CLUSTER_NAME] | kubectl apply -f -
+       # Cluster 1
+      istioctl create-remote-secret \
+         --context="${CTX_CLUSTER1}" \
+         --name=cluster1 | \
+         kubectl apply -f - --context="${CTX_CLUSTER2}" 
+      # Cluster 2
+      istioctl create-remote-secret \
+         --context="${CTX_CLUSTER2}" \
+         --name=cluster2 | \
+         kubectl apply -f - --context="${CTX_CLUSTER1}"
    ```
    
-10. **Sample Application Deployment**
-    Deploy sample applications using `kubectl`.
-    ```bash
-    kubectl apply -n [NAMESPACE] -f [APPLICATION_YAML]
-    ```
-   
-11. **Cleanup and Finalization**
-    Ensure all resources are running and validate the setup by accessing the applications.
+10. **Helloworld Application Deployment**
+    Now is where the fun (or despair) begins. Let's make sure verything is working as expected. The first application we are going to deploy is the helloworld app from the public Istio respo. The goal will be to deploy it in both clusters and use the sleep app to validate that the service in both cluster are accessible. 
 
-## Note
-- Ensure to replace placeholders (like `[RESOURCE_GROUP]`, `[AKS_CLUSTER_NAME]`, etc.) with actual values.
-- For detailed explanations of each step, refer to the comments in the provided script.
-- Always validate the setup at each step to ensure smooth deployment and configuration.
+    Here's the helloworld app deployment
+    ```bash
+      #Create sample namespace 
+      kubectl create namespace sample --context="${CTX_CLUSTER1}"
+      kubectl create namespace sample --context="${CTX_CLUSTER2}"
+      # Enable istio injection
+      kubectl label --context="${CTX_CLUSTER1}" namespace sample istio-injection=enabled
+      kubectl label --context="${CTX_CLUSTER2}" namespace sample istio-injection=enabled
+      # Create the HelloWorld service in both clusters:
+      kubectl apply --context="${CTX_CLUSTER1}" \
+         -f $BASE_DIR/kubernetes/sample-app/helloworld.yaml \
+         -l service=helloworld -n sample
+      kubectl apply --context="${CTX_CLUSTER2}" \
+         -f $BASE_DIR/kubernetes/sample-app/helloworld.yaml \
+         -l service=helloworld -n sample
+      # Deploy version 1 in cluster 1
+      kubectl apply --context=\"${CTX_CLUSTER1}\" \
+         -f $BASE_DIR/kubernetes/sample-app/helloworld.yaml \
+         -l version=v1 -n sample
+      # Deploy version 2 in cluster 2
+      kubectl apply --context="${CTX_CLUSTER2}" \
+         -f $BASE_DIR/kubernetes/sample-app/helloworld.yaml \
+         -l version=v2 -n sample
+      # Now let's deploy the sleep app
+      kubectl apply --context="${CTX_CLUSTER1}" \
+         -f $BASE_DIR/kubernetes/sample-app/sleep.yaml -n sample
+      kubectl apply --context="${CTX_CLUSTER2}" \
+         -f $BASE_DIR/kubernetes/sample-app/sleep.yaml -n sample
+    ```
+
+    Make sure all pods are running, including the envoy side car:
+    ```bash
+      kubectl get pods -n sample --context="${CTX_CLUSTER1}" -o wide
+      kubectl get pods -n sample --context="${CTX_CLUSTER2}" -o wide
+    ```
+
+    Now it's time to verify the cross-cluster traffic. For that, we are going to call the helloworld service seceral times using the Sleep pod. The reason why we are doing this from the Sleep pod is to ensure the traffic is being routed inside the mesh we created. 
+
+    Send one request from the Sleep pod on cluster1 to the HelloWorld service:
+     ```bash
+         kubectl exec --context="${CTX_CLUSTER1}" -n sample -c sleep \
+            "$(kubectl get pod --context="${CTX_CLUSTER1}" -n sample -l \
+            app=sleep -o jsonpath='{.items[0].metadata.name}')" \
+            -- curl -sS helloworld.sample:5000/hello
+    ```
+    Repeat this request several times and verify that the HelloWorld version should toggle between v1 and v2.
+
+    Now let's do the same from cluster 2:
+     ```bash
+         kubectl exec --context="${CTX_CLUSTER2}" -n sample -c sleep \
+            "$(kubectl get pod --context="${CTX_CLUSTER2}" -n sample -l \
+            app=sleep -o jsonpath='{.items[0].metadata.name}')" \
+            -- curl -sS helloworld.sample:5000/hello
+    ```
+
+    You should see alternate responses from Helloworld V1 and Helloworld V2.
+
+10. **Multi-cluster Traffic Management**
+    In this section we are going to play with ServiceEntry and DestinationRule to see how we can manage the traffic between the clusters. For this example, we are going to apply the following Istio resources to cluster 1:
+    ```yaml
+      apiVersion: networking.istio.io/v1beta1
+      kind: DestinationRule
+      metadata:
+      name: helloworld-per-cluster-dr
+      spec:
+      host: helloworld.sample.svc.cluster.local
+      subsets:
+      - name: cluster1
+         labels:
+            topology.istio.io/cluster: cluster1
+      - name: cluster2
+         labels:
+            topology.istio.io/cluster: cluster2
+      ---
+      apiVersion: networking.istio.io/v1beta1
+      kind: VirtualService
+      metadata:
+      name: helloworld-cluster-local-vs
+      spec:
+      hosts:
+      - helloworld.sample.svc.cluster.local
+      http:
+      - name: "cluster-1-local"
+         match:
+         - sourceLabels:
+            topology.istio.io/cluster: "cluster1"
+         route:
+         - destination:
+            host: helloworld.sample.svc.cluster.local
+            subset: cluster1
+      - name: "cluster-2-local"
+         match:
+         - sourceLabels:
+            topology.istio.io/cluster: "cluster2"
+         route:
+         - destination:
+            host: helloworld.sample.svc.cluster.local
+            subset: cluster2
+   ```
+   DestinationRule subsets allows you to partition a service by selecting labels. In the example above, we create two subsets: 1 for cluster 1 and another one for cluster 2. This provides another way to create cluster-local traffic rules by limiting the destination subset in a VirtualService, as can be seen above.
+
+   Now let's try to do the same test as before, by executing the curl command via the Sleep pod several times in each cluster:
+   ```bash
+         kubectl exec --context="${CTX_CLUSTER1}" -n sample -c sleep \
+            "$(kubectl get pod --context="${CTX_CLUSTER1}" -n sample -l \
+            app=sleep -o jsonpath='{.items[0].metadata.name}')" \
+            -- curl -sS helloworld.sample:5000/hello
+   ```
+    Repeat this request several times and verify that the HelloWorld version should always respond with V1, since we restricted the traffic of that service to that cluster only. 
+
+    Now let's do the same from cluster 2:
+   ```bash
+         kubectl exec --context="${CTX_CLUSTER2}" -n sample -c sleep \
+            "$(kubectl get pod --context="${CTX_CLUSTER2}" -n sample -l \
+            app=sleep -o jsonpath='{.items[0].metadata.name}')" \
+            -- curl -sS helloworld.sample:5000/hello
+    ```
+   This should continue beyond routed to both clusters, with V1 and V2 being in the responses.
+
+11. **Bookinfo Application Deployment**
+   Let's focus on something that can be accessed by a browser. We are going to deplou the Istio Bookinfo sample app. Plase chech which services are part of this solution by checking the Istio documentation. 
+
+   Now we are going to deploy the bookinfo app in our clusters, but instead of deploying everything to a single cluster. We are deploying the review service and all its versions on Cluster 2 and the remaining services on Cluster 1. 
+   ```bash
+         #Create sample namespace 
+         kubectl create namespace bookinfo --context="${CTX_CLUSTER1}"
+         kubectl create namespace bookinfo --context="${CTX_CLUSTER2}"
+         # Enable istio injection
+         kubectl label --context="${CTX_CLUSTER1}" namespace bookinfo istio-injection=enabled
+         kubectl label --context="${CTX_CLUSTER2}" namespace bookinfo istio-injection=enabled
+         # Deploy all components to cluster 1, except for reviews, which is created on cluster 2
+         kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-cluster1.yaml --context="${CTX_CLUSTER1}"
+         kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-cluster2.yaml --context="${CTX_CLUSTER2}"
+         # Deploy the istio gateway for the front end in cluster 1
+         kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-gateway.yaml --context="${CTX_CLUSTER1}"
+         # Retrieve the gateway external IP
+         export GATEWAY_PRODUCT=$(kubectl --context central get -n istio-system service istio-ingressgateway --context="${CTX_CLUSTER1}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+         # Check on your browser the bookinfo app and note that the review service is in cluster 2
+         echo "http://${GATEWAY_PRODUCT}/productpage"
+    ```
+
+   Copy the URL generated by the echo command above and paste it in your browser. If the networking gods are on your side, you should be able to see the main bookinfo landing page with the review section alternating versions everytime you refresh the page. 
+
+   But wait, how the Product page service was able to find the reviews service in another cluster? In multicluster deployments, the client cluster must have a DNS entry for the service in order for the DNS lookup to succeed To ensure successful DNS lookups in multicluster deployments, deploy a Kubernetes Service, even if there are no instances of that service's pods running in the client cluster.
+
+   Check the bookinfo-cluster1.yaml and note that there's a service definition for the reviews service, even tough there's no reviews deployment in cluster 1. 
+
+11. **Cleanup**
+    To remove all the resources created, just delete the Azure Resource Group:
+    ```bash
+       az group delete --name $RESOURCE_GROUP
+   ```
