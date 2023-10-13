@@ -1,15 +1,15 @@
 # README: Multi-Cluster Istio Service Mesh Setup Script Walkthrough
 
 ## Introduction
-The provided Bash script is designed to set up a multi-cluster Istio service mesh across two Azure Kubernetes Service (AKS) clusters. It automates the process of checking prerequisites, bootstrapping the environment, generating certificates, installing and configuring Istio, and deploying sample applications to validate the setup.
+   The provided Bash script is designed to set up a multi-cluster Istio service mesh across two Azure Kubernetes Service (AKS) clusters. It automates the process of checking prerequisites, bootstrapping the environment, generating certificates, installing and configuring Istio, and deploying sample applications to validate the setup.
 
 ## Prerequisites
-Ensure the following tools and access are available to facilitate the setup process:
-- `az`: Azure CLI, used for managing Azure resources.
-- `kubectl`: Kubernetes command-line tool, used for interacting with clusters.
-- `istioctl`: Istio command-line tool, used for managing Istio service mesh.
-- Azure CLI login and access to create/manage AKS clusters.
-- Environment variables set in an `env` file.
+   Ensure the following tools and access are available to facilitate the setup process:
+   - `az`: Azure CLI, used for managing Azure resources.
+   - `kubectl`: Kubernetes command-line tool, used for interacting with clusters.
+   - `istioctl`: Istio command-line tool, used for managing Istio service mesh.
+   - Azure CLI login and access to create/manage AKS clusters.
+   - Environment variables set in an `env` file.
 
 ## Script Execution Steps
 
@@ -137,6 +137,7 @@ Ensure the following tools and access are available to facilitate the setup proc
    ```
    
 5. **Network Configuration**
+
    Network for a mesh is different from traditional networking. Here labeling assists in network segmentation and management within the Istio mesh, ensuring accurate routing and isolation of communication paths. Nowl abel the default network for clusters to manage the network topology within the Istio mesh: 
    ```bash
    # Set the default network for cluster1
@@ -186,6 +187,7 @@ Ensure the following tools and access are available to facilitate the setup proc
    ```
    
 7. **East-West Gateway Setup**
+
    In this step we will install and configure the east-west gateway in both clusters, facilitating communication between services in different clusters. This step ensures that services in different clusters can communicate with each other through a dedicated gateway. Let's take a look at one of the configurations we are going to pass to `istioctl`:
    ```yaml
    apiVersion: install.istio.io/v1alpha1
@@ -253,6 +255,7 @@ Ensure the following tools and access are available to facilitate the setup proc
    ```
    
 8. **Service Exposure**
+
    Now we are going to expose services on the east-west gateway in both clusters, making them accessible to services in the other cluster. This step ensures that services can be discovered and accessed across clusters, enabling a truly multi-cluster service mesh. Let's check the gateway configuration for that:
 
    ```yaml
@@ -300,6 +303,7 @@ Ensure the following tools and access are available to facilitate the setup proc
    ```
    
 10. **Helloworld Application Deployment**
+
    Now is where the fun (or despair) begins. Let's make sure everything is working as expected. The first application we are going to deploy is the helloworld app from the public Istio respo. The goal will be to deploy it in both clusters and use the sleep app to validate that the service in both cluster are accessible.   
 
    Here's the helloworld app deployment
@@ -332,36 +336,36 @@ Ensure the following tools and access are available to facilitate the setup proc
       -f $BASE_DIR/kubernetes/sample-app/sleep.yaml -n sample
    ```
 
-    Make sure all pods are running, including the envoy side car:
-    ```bash
+   Make sure all pods are running, including the envoy side car:
+   ```bash
    kubectl get pods -n sample --context="${CTX_CLUSTER1}" -o wide
    kubectl get pods -n sample --context="${CTX_CLUSTER2}" -o wide
-    ```
+   ```
 
-    Now it's time to verify the cross-cluster traffic. For that, we are going to call the helloworld service seceral times using the Sleep pod. The reason why we are doing this from the Sleep pod is to ensure the traffic is being routed inside the mesh we created. 
+   Now it's time to verify the cross-cluster traffic. For that, we are going to call the helloworld service seceral times using the Sleep pod. The reason why we are doing this from the Sleep pod is to ensure the traffic is being routed inside the mesh we created. 
 
-    Send one request from the Sleep pod on cluster1 to the HelloWorld service:
-     ```bash
-      kubectl exec --context="${CTX_CLUSTER1}" -n sample -c sleep \
-         "$(kubectl get pod --context="${CTX_CLUSTER1}" -n sample -l \
-         app=sleep -o jsonpath='{.items[0].metadata.name}')" \
-         -- curl -sS helloworld.sample:5000/hello
-    ```
-    Repeat this request several times and verify that the HelloWorld version should toggle between v1 and v2.
+   Send one request from the Sleep pod on cluster1 to the HelloWorld service:
+   ```bash
+   kubectl exec --context="${CTX_CLUSTER1}" -n sample -c sleep \
+      "$(kubectl get pod --context="${CTX_CLUSTER1}" -n sample -l \
+      app=sleep -o jsonpath='{.items[0].metadata.name}')" \
+      -- curl -sS helloworld.sample:5000/hello
+   ```
+   Repeat this request several times and verify that the HelloWorld version should toggle between v1 and v2.
 
-    Now let's do the same from cluster 2:
-     ```bash
-      kubectl exec --context="${CTX_CLUSTER2}" -n sample -c sleep \
-         "$(kubectl get pod --context="${CTX_CLUSTER2}" -n sample -l \
-         app=sleep -o jsonpath='{.items[0].metadata.name}')" \
-         -- curl -sS helloworld.sample:5000/hello
-    ```
+   Now let's do the same from cluster 2:
+   ```bash
+   kubectl exec --context="${CTX_CLUSTER2}" -n sample -c sleep \
+      "$(kubectl get pod --context="${CTX_CLUSTER2}" -n sample -l \
+      app=sleep -o jsonpath='{.items[0].metadata.name}')" \
+      -- curl -sS helloworld.sample:5000/hello
+   ```
 
-    You should see alternate responses from Helloworld V1 and Helloworld V2.
+   You should see alternate responses from Helloworld V1 and Helloworld V2.
 
 11. **Multi-cluster Traffic Management**
-    In this section we are going to play with ServiceEntry and DestinationRule to see how we can manage the traffic between the clusters. For this example, we are going to apply the following Istio resources to cluster 1:
-    ```yaml
+   In this section we are going to play with ServiceEntry and DestinationRule to see how we can manage the traffic between the clusters. For this example, we are going to apply the following Istio resources to cluster 1:
+   ```yaml
    apiVersion: networking.istio.io/v1beta1
    kind: DestinationRule
    metadata:
@@ -418,10 +422,11 @@ Ensure the following tools and access are available to facilitate the setup proc
       "$(kubectl get pod --context="${CTX_CLUSTER2}" -n sample -l \
       app=sleep -o jsonpath='{.items[0].metadata.name}')" \
       -- curl -sS helloworld.sample:5000/hello
-    ```
+   ```
    This should continue beyond routed to both clusters, with V1 and V2 being in the responses.
 
 12. **Bookinfo Application Deployment**
+
    Let's focus on something that can be accessed by a browser. We are going to deploy the Istio Bookinfo sample app. Plase check which services are part of this solution by checking the Istio documentation. 
 
    Now we are going to deploy the bookinfo app in our clusters, but instead of deploying everything to a single cluster. We are deploying the review service and all its versions on Cluster 2 and the remaining services on Cluster 1. 
@@ -441,7 +446,7 @@ Ensure the following tools and access are available to facilitate the setup proc
    export GATEWAY_PRODUCT=$(kubectl --context="${CTX_CLUSTER1}" get -n istio-system service istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
    # Check on your browser the bookinfo app and note that the review service is in cluster 2
    echo "http://${GATEWAY_PRODUCT}/productpage"
-    ```
+   ```
 
    Copy the URL generated by the echo command above and paste it in your browser. If the networking gods are on your side, you should be able to see the main bookinfo landing page with the review section alternating versions everytime you refresh the page. 
 
@@ -450,7 +455,7 @@ Ensure the following tools and access are available to facilitate the setup proc
    Check the bookinfo-cluster1.yaml and note that there's a service definition for the reviews service, even tough there's no reviews deployment in cluster 1. 
 
 13. **Cleanup**
-    To remove all the resources created, just delete the Azure Resource Group:
+   To remove all the resources created, just delete the Azure Resource Group:
    ```bash
    az group delete --name $RESOURCE_GROUP
    ```
