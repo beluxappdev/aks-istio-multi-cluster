@@ -29,6 +29,7 @@ pe "validate_prerequisites"
 echo -e "$ECHO_COLOR Bootstrapping the environment (creating resource groups, AKS clusters, etc.)..."
 if [ $(az group exists --name $RESOURCE_GROUP) = false ]; then
     pe "source $BASE_DIR/bootstrap-workshop.sh"
+    pe "sleep 20"
 fi
 
 echo -e "$ECHO_COLOR << Clusters created, let's update our kube config >>"
@@ -102,7 +103,7 @@ echo -e "$ECHO_COLOR Install the east-west gateway in cluster2"
 pe "istioctl --context=\"${CTX_CLUSTER2}\" install -y -f  $BASE_DIR/kubernetes/istio/cluster2-ew-gtw-config.yaml"
 pe "kubectl patch service istio-eastwestgateway -n istio-system --context=\"${CTX_CLUSTER2}\" -p '{\"metadata\":{\"annotations\":{\"service.beta.kubernetes.io/azure-load-balancer-internal\":\"true\"}}}'"
 
-pe "sleep 20"
+pe "sleep 30"
 
 echo -e "$ECHO_COLOR Check that the east-west gateway assigned an external IP address:"
 pe "kubectl --context="${CTX_CLUSTER1}" get svc istio-eastwestgateway -n istio-system"
@@ -167,6 +168,9 @@ pe "kubectl apply --context=\"${CTX_CLUSTER2}\" \
     -f $BASE_DIR/kubernetes/sample-app/helloworld.yaml \
     -l version=v2 -n sample"
 
+# Restric cluster 1 scv traffic to intra cluster
+pe "kubectl apply -n sample -f $BASE_DIR/kubernetes/sample-app/helloworld-cluster-local.yaml --context=\"${CTX_CLUSTER1}\""
+
 pe "kubectl apply --context=\"${CTX_CLUSTER1}\" \
     -f $BASE_DIR/kubernetes/sample-app/sleep.yaml -n sample"
 pe "kubectl apply --context=\"${CTX_CLUSTER2}\" \
@@ -185,8 +189,6 @@ pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-cluste
 pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-cluster2.yaml --context=\"${CTX_CLUSTER2}\""
 # Create product page gateway
 pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-istio.yaml --context=\"${CTX_CLUSTER1}\""
-# Restric cluster 1 scv traffic to intra cluster
-pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/helloworld-cluster-local.yaml --context=\"${CTX_CLUSTER1}\""
 
 export GATEWAY_PRODUCT=$(kubectl --context="${CTX_CLUSTER1}" get -n istio-system service istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 

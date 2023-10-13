@@ -1,5 +1,5 @@
 # Edit this unique names to create the Azure resources
-export UNIQUEID=airo
+export UNIQUEID=$(openssl rand -hex 3)
 export APPNAME=multicluster
 export LOCATION=eastus
 
