@@ -29,7 +29,6 @@ pe "validate_prerequisites"
 echo -e "$ECHO_COLOR Bootstrapping the environment (creating resource groups, AKS clusters, etc.)..."
 if [ $(az group exists --name $RESOURCE_GROUP) = false ]; then
     pe "source $BASE_DIR/bootstrap-workshop.sh"
-    pe "sleep 20"
 fi
 
 echo -e "$ECHO_COLOR << Clusters created, let's update our kube config >>"
@@ -57,14 +56,14 @@ pe "make -f ../tools/certificates/Makefile.selfsigned.mk cluster2-cacerts"
 # SECTION: Istio Namespace and Secrets Setup
 # Creating the Istio system namespace and setting up secrets in both clusters.
 pe "kubectl create namespace istio-system --dry-run=client --context=\"${CTX_CLUSTER1}\" -o yaml | kubectl apply --context=\"${CTX_CLUSTER1}\" -f -"
+pe "kubectl create namespace istio-system --dry-run=client --context=\"${CTX_CLUSTER2}\" -o yaml | kubectl apply --context=\"${CTX_CLUSTER2}\" -f -"
+pe "sleep 20"
 pe "kubectl get secrets -n istio-system --context=\"${CTX_CLUSTER1}\" | grep -q \"^cacerts\" || \
         kubectl create secret generic cacerts -n istio-system --context=\"${CTX_CLUSTER1}\" \
         --from-file=cluster1/ca-cert.pem \
         --from-file=cluster1/ca-key.pem \
         --from-file=cluster1/root-cert.pem \
         --from-file=cluster1/cert-chain.pem" 
-
-pe "kubectl create namespace istio-system --dry-run=client --context=\"${CTX_CLUSTER2}\" -o yaml | kubectl apply --context=\"${CTX_CLUSTER2}\" -f -"
 pe "kubectl get secrets -n istio-system --context=\"${CTX_CLUSTER2}\" | grep -q \"^cacerts\" || \
         kubectl create secret generic cacerts -n istio-system --context=\"${CTX_CLUSTER2}\" \
         --from-file=cluster2/ca-cert.pem \
@@ -178,16 +177,18 @@ echo -e "$ECHO_COLOR Verify the installation with the bookinfo app"
 pe "kubectl create namespace bookinfo --dry-run=client --context=\"${CTX_CLUSTER1}\" -o yaml | kubectl apply --context=\"${CTX_CLUSTER1}\" -f -"
 pe "kubectl create namespace bookinfo --dry-run=client --context=\"${CTX_CLUSTER2}\" -o yaml | kubectl apply --context=\"${CTX_CLUSTER2}\" -f -"
 
-pe "kubectl label namespace bookinfo istio-injection=enabled --context="${CTX_CLUSTER1}""
-pe "kubectl label namespace bookinfo istio-injection=enabled --context=\"${CTX_CLUSTER2}\""
+pe "kubectl label namespace bookinfo istio-injection=enabled --context=${CTX_CLUSTER1}"
+pe "kubectl label namespace bookinfo istio-injection=enabled --context=${CTX_CLUSTER2}"
 
 echo -e "$ECHO_COLOR Assign all components to cluster 1, except for reviews, which is created on cluster 2."
 pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-cluster1.yaml --context=\"${CTX_CLUSTER1}\""
 pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-cluster2.yaml --context=\"${CTX_CLUSTER2}\""
+# Create product page gateway
+pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-istio.yaml --context=\"${CTX_CLUSTER1}\""
+# Restric cluster 1 scv traffic to intra cluster
+pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/helloworld-cluster-local.yaml --context=\"${CTX_CLUSTER1}\""
 
-pe "kubectl apply -n bookinfo -f $BASE_DIR/kubernetes/sample-app/bookinfo-gateway.yaml --context=\"${CTX_CLUSTER1}\""
-
-export GATEWAY_PRODUCT=$(kubectl --context central get -n istio-system service istio-ingressgateway --context="${CTX_CLUSTER1}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+export GATEWAY_PRODUCT=$(kubectl --context="${CTX_CLUSTER1}" get -n istio-system service istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
 echo -e "$ECHO_COLOR Check on your browser the bookinfo app and note that the review service is in cluster 2"
 echo -e "$ECHO_COLOR http://${GATEWAY_PRODUCT}/productpage"

@@ -11,32 +11,25 @@ The provided Bash script is designed to set up a multi-cluster Istio service mes
 - Environment variables set in an `env` file.
 
 ## Script Execution Steps
-1. **Loading Environment Variables and Functions**
-2. **Validate Prerequisites**
-3. **Bootstrapping the Environment**
-4. **Certificate Generation**
-5. **Istio Namespace and Secrets Setup**
-6. **Network Configuration**
-7. **Istio Installation and Configuration**
-8. **East-West Gateway Setup**
-9. **Service Exposure**
-10. **Endpoint Discovery Setup**
-11. **Sample Application Deployment**
-12. **Cleanup and Finalization**
+
+   If you want to skip all the fun and just see the result, you can execute the following script to create the Azure Resources and all the Istion installation and configuration. 
+   ```bash
+      ./walkthrough-workshop.sh
+   ```
 
 ## Manual Execution Steps
-Below are the steps to manually execute the script's operations:
+   Here's where the fun begins. Let's go step by step and learn how to configure this from scatch. Below you will find all the steps and a analyses of what type of resources are being created. 
 
 1. **Validate Prerequisites**
    
-   **1.1** Ensure `az`, `kubectl`, and `istioctl` are installed and available in your PATH.
+   Ensure `az`, `kubectl`, and `istioctl` are installed and available in your PATH.
    ```bash
    az --version
    kubectl version --client
    istioctl version
    ```
 
-   **1.2** Edit the env file with a UNIQUEID that you want to use to create all the Azure Resources.
+   Edit the env file with a UNIQUEID that you want to use to create all the Azure Resources.
    ```bash
    # Edit this unique names to create the Azure resources
     export UNIQUEID=$(openssl rand -hex 3)
@@ -68,31 +61,31 @@ Below are the steps to manually execute the script's operations:
     export NC='\033[0m'
    ```
 
-   **1.3** After adjusting the env file, read it in your bash session so you can run all the remaining lab commands. Note that if you stop the lab in the middle, it is important to always reload the env file.
+   After adjusting the env file, read it in your bash session so you can run all the remaining lab commands. Note that if you stop the lab in the middle, it is important to always reload the env file.
    ```bash
    source ./env 
    ```
 
 2. **Bootstrapping the Environment**
    
-   **2.1** For this lab, you will need 2 AKS cluster that can communicate to each other, or that has access to each cluster eastwest gateway. The script bootstrap-workshop is the easiest way to create two vanilla AKS clusters for configuring Istio and the sample apps. To run it, all you need to do is ensure that tou have az tool installed and then login with your account:
+   For this lab, you will need 2 AKS cluster that can communicate to each other, or that has access to each cluster eastwest gateway. The script bootstrap-workshop is the easiest way to create two vanilla AKS clusters for configuring Istio and the sample apps. To run it, all you need to do is ensure that tou have az tool installed and then login with your account:
 
    ```bash
    az login --use-device-code
    ```
 
-   **2.2** Executing the command will automatically open a web browser window prompting you to authenticate. Once prompted, sign in using the user account that has the Owner role in the target Azure subscription that you will use in this lab and close the web browser window. Make sure that you are logged in to the right subscription for the consecutive commands.
+   Executing the command will automatically open a web browser window prompting you to authenticate. Once prompted, sign in using the user account that has the Owner role in the target Azure subscription that you will use in this lab and close the web browser window. Make sure that you are logged in to the right subscription for the consecutive commands.
 
    ```bash
    az account list -o table
    ```
 
-   **2.3** If in the above statement you don’t see the right account being indicated as your default one, change your environment to the right subscription with the following command, replacing the <subscription-id>.
+   If in the above statement you don’t see the right account being indicated as your default one, change your environment to the right subscription with the following command, replacing the <subscription-id>.
 
    ```bash
    az account set --subscription <subscription-id>
    ```
-   **2.4** For this workshop, you will need 2 AKS cluster that can communicate to each other, or that has access to each cluster eastwest gateway. The script bootstrap-workshop is the easiest way to create two vanilla AKS clusters for configuring Istio and the sample apps. Note that this script can take from 5-10 minutes to run.
+   In this lab, you will create 2 AKS clusters that can communicate to each other, or that has access to each cluster eastwest gateway. The script bootstrap-workshop is the easiest way to create two vanilla AKS clusters for configuring Istio and the sample apps. Note that this script can take from 5-10 minutes to run.
 
    ```bash
    ./boostrap-workshop.sh
@@ -100,7 +93,7 @@ Below are the steps to manually execute the script's operations:
 
 3. **Configure Trust Between the Clusters**
    
-   **3.1** Multicluster service mesh deployments require that you establish trust between all clusters in the mesh. For example, you could use a certificate authority (CA) to sign certificates for all of the clusters in the mesh. This would allow the clusters to verify each other's identities using their certificates. Now let's move to the `certs` directory and use `make` commands to generate certificates.
+   Multicluster service mesh deployments require that you establish trust between all clusters in the mesh. For example, you could use a certificate authority (CA) to sign certificates for all of the clusters in the mesh. This would allow the clusters to verify each other's identities using their certificates. Now let's move to the `certs` directory and use `make` commands to generate certificates.
    ```bash
       mkdir -p certs
       pushd certs
@@ -115,7 +108,7 @@ Below are the steps to manually execute the script's operations:
    
 4. **Istio Namespace and Secrets Setup**
    
-   **4.1**Before creating secret for the certificates, we need to create the istio-system namespace:
+   Before creating secret for the certificates, we need to create the istio-system namespace:
    ```bash
       # For Cluster 1
       kubectl create namespace istio-system --context="${CTX_CLUSTER1}"
@@ -123,7 +116,7 @@ Below are the steps to manually execute the script's operations:
       kubectl create namespace istio-system --context="${CTX_CLUSTER2}"
    ```
 
-   **4.2** Now you can create a secret including all the unout files in each cluster:
+   Now you can create a secret including all the unout files in each cluster:
    ```bash
       # For Cluster 1
       kubectl create secret generic cacerts --context="${CTX_CLUSTER1}" -n istio-system \
@@ -153,7 +146,7 @@ Below are the steps to manually execute the script's operations:
    
 6. **Istio Installation and Configuration**
    
-   **6.1** Let's take a look at the Istion configuration for each cluster
+   Let's take a look at the Istion configuration for each cluster
    
    ```yaml
       # Cluster 1
@@ -189,7 +182,7 @@ Below are the steps to manually execute the script's operations:
    ```
    
 7. **East-West Gateway Setup**
-   **7.1** In this step we will install and configure the east-west gateway in both clusters, facilitating communication between services in different clusters. This step ensures that services in different clusters can communicate with each other through a dedicated gateway. Let's take a look at one of the configurations we are going to pass to `istioctl`:
+   In this step we will install and configure the east-west gateway in both clusters, facilitating communication between services in different clusters. This step ensures that services in different clusters can communicate with each other through a dedicated gateway. Let's take a look at one of the configurations we are going to pass to `istioctl`:
    ```yaml
       apiVersion: install.istio.io/v1alpha1
       kind: IstioOperator
@@ -256,7 +249,7 @@ Below are the steps to manually execute the script's operations:
    ```
    
 8. **Service Exposure**
-   **8.1** Now we are going to expose services on the east-west gateway in both clusters, making them accessible to services in the other cluster. This step ensures that services can be discovered and accessed across clusters, enabling a truly multi-cluster service mesh. Let's check the gateway configuration for that:
+   Now we are going to expose services on the east-west gateway in both clusters, making them accessible to services in the other cluster. This step ensures that services can be discovered and accessed across clusters, enabling a truly multi-cluster service mesh. Let's check the gateway configuration for that:
 
    ```yaml
       apiVersion: networking.istio.io/v1alpha3
@@ -288,7 +281,7 @@ Below are the steps to manually execute the script's operations:
    
 9. **Endpoint Discovery Setup**
 
-   **9.1** On this step we are going to enable endpoint discovery by installing remote secrets in both clusters, allowing each cluster to discover services in the other. This step is crucial for enabling dynamic discovery of services across clusters. Create remote secrets and apply them using `istioctl` and `kubectl`.
+   On this step we are going to enable endpoint discovery by installing remote secrets in both clusters, allowing each cluster to discover services in the other. This step is crucial for enabling dynamic discovery of services across clusters. Create remote secrets and apply them using `istioctl` and `kubectl`.
    ```bash
        # Cluster 1
       istioctl create-remote-secret \
@@ -362,7 +355,7 @@ Below are the steps to manually execute the script's operations:
 
     You should see alternate responses from Helloworld V1 and Helloworld V2.
 
-10. **Multi-cluster Traffic Management**
+11. **Multi-cluster Traffic Management**
     In this section we are going to play with ServiceEntry and DestinationRule to see how we can manage the traffic between the clusters. For this example, we are going to apply the following Istio resources to cluster 1:
     ```yaml
       apiVersion: networking.istio.io/v1beta1
@@ -424,7 +417,7 @@ Below are the steps to manually execute the script's operations:
     ```
    This should continue beyond routed to both clusters, with V1 and V2 being in the responses.
 
-11. **Bookinfo Application Deployment**
+12. **Bookinfo Application Deployment**
    Let's focus on something that can be accessed by a browser. We are going to deplou the Istio Bookinfo sample app. Plase chech which services are part of this solution by checking the Istio documentation. 
 
    Now we are going to deploy the bookinfo app in our clusters, but instead of deploying everything to a single cluster. We are deploying the review service and all its versions on Cluster 2 and the remaining services on Cluster 1. 
@@ -452,7 +445,7 @@ Below are the steps to manually execute the script's operations:
 
    Check the bookinfo-cluster1.yaml and note that there's a service definition for the reviews service, even tough there's no reviews deployment in cluster 1. 
 
-11. **Cleanup**
+13. **Cleanup**
     To remove all the resources created, just delete the Azure Resource Group:
     ```bash
        az group delete --name $RESOURCE_GROUP
