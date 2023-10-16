@@ -470,12 +470,13 @@ To remove all the resources created, just delete the Azure Resource Group:
 az group delete --name $RESOURCE_GROUP
 ```
 
-13. **Troubleshoot**
-TODO
+14. **Troubleshoot**
 
-13. **References / More Information**
-1. [Istio Deployment Models](https://istio.io/latest/docs/ops/deployment/deployment-models/)
-2. [Multi-Primary on different networks](https://istio.io/latest/docs/setup/install/multicluster/multi-primary_multi-network/)
-3. [Plug in CA Certificates](https://istio.io/latest/docs/tasks/security/cert-management/plugin-ca-cert/)
-4. [Bookinfo Application](https://istio.io/latest/docs/examples/bookinfo/)
-5. [Azure Kubernetes Services](https://learn.microsoft.com/en-us/azure/aks/intro-kubernetes)
+TODO :)
+
+15. **References / More Information**
+   * [Istio Deployment Models](https://istio.io/latest/docs/ops/deployment/deployment-models/)
+   * [Multi-Primary on different networks](https://istio.io/latest/docs/setup/install/multicluster/multi-primary_multi-network/)
+   * [Plug in CA Certificates](https://istio.io/latest/docs/tasks/security/cert-management/plugin-ca-cert/)
+   * [Bookinfo Application](https://istio.io/latest/docs/examples/bookinfo/)
+   * [Azure Kubernetes Services](https://learn.microsoft.com/en-us/azure/aks/intro-kubernetes)
