@@ -53,6 +53,12 @@ spec:
       containers:
       - name: sleep
         image: curlimages/curl
+        resources:
+          requests:
+            cpu: "50m"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
         command: ["/bin/sleep", "infinity"]
         imagePullPolicy: IfNotPresent
         volumeMounts:

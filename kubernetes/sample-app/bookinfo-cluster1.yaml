@@ -76,6 +76,26 @@ spec:
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 9080
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+          requests:
+            cpu: 100m
+            memory: 64Mi
+---
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: details
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: details-v1
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 50
 ---
 ##################################################################################################
 # Ratings service
@@ -124,9 +144,29 @@ spec:
       containers:
       - name: ratings
         image: docker.io/istio/examples-bookinfo-ratings-v1:1.18.0
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 50m
+            memory: 32Mi
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 9080
+---
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ratings
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ratings-v1
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 50
 ---
 ##################################################################################################
 # Productpage services
@@ -180,6 +220,13 @@ spec:
       - name: productpage
         image: docker.io/istio/examples-bookinfo-productpage-v1:1.18.0
         imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: 300m
+            memory: 256Mi
+          requests:
+            cpu: 200m
+            memory: 128Mi
         ports:
         - containerPort: 9080
         volumeMounts:
@@ -188,6 +235,19 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
+---
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: productpage
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: productpage-v1
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 50
 ---
 ##################################################################################################
 # Reviews service
